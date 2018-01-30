@@ -28,6 +28,7 @@ type Whisper struct {
 	committedPoints     uint32
 	recv                func(chan bool) *points.Points
 	confirm             func(*points.Points)
+	onCreate            func(string)
 	onCreateTagged      func(string)
 	tagsEnabled         bool
 	schemas             WhisperSchemas
@@ -183,6 +184,10 @@ func store(p *Whisper, values *points.Points) {
 				zap.String("method", aggr.aggregationMethodStr),
 			)
 			return
+		}
+
+		if p.onCreate != nil {
+			p.onCreate(values.Metric)
 		}
 
 		if p.tagsEnabled && p.onCreateTagged != nil && strings.IndexByte(values.Metric, ';') >= 0 {

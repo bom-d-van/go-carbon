@@ -47,6 +47,7 @@ import (
 	whisper "github.com/go-graphite/go-whisper"
 	"github.com/lomik/go-carbon/helper"
 	pb "github.com/lomik/go-carbon/helper/carbonzipperpb"
+	"github.com/lomik/go-carbon/helper/notifier"
 	"github.com/lomik/go-carbon/helper/stat"
 	"github.com/lomik/go-carbon/points"
 	pickle "github.com/lomik/og-rek"
@@ -259,7 +260,8 @@ type CarbonserverListener struct {
 	exitChan      chan struct{}
 	timeBuckets   []uint64
 
-	db *leveldb.DB
+	db                 *leveldb.DB
+	newMetricsNotifier notifier.Notifier
 }
 
 type metricDetailsFlat struct {
@@ -281,6 +283,8 @@ type fileIndex struct {
 	accessTimes map[string]int64
 	freeSpace   uint64
 	totalSpace  uint64
+
+	tags map[string]TagIndex // should be a tree
 }
 
 func NewCarbonserverListener(cacheGetFunc func(key string) []points.Point) *CarbonserverListener {
@@ -353,6 +357,10 @@ func (listener *CarbonserverListener) SetInternalStatsDir(dbPath string) {
 
 func (listener *CarbonserverListener) SetPercentiles(percentiles []int) {
 	listener.percentiles = percentiles
+}
+
+func (listener *CarbonserverListener) SetNotifier(notifier notifier.Notifier) {
+	listener.notifier = notifier
 }
 
 func (listener *CarbonserverListener) CurrentFileIndex() *fileIndex {
@@ -458,6 +466,11 @@ func (listener *CarbonserverListener) updateFileList(dir string) {
 					ATime:   i.ATime,
 				}
 			}
+		}
+
+		// has tags
+		if hasSuffix && strings.Contains(info.Name(), ";") {
+			//
 		}
 
 		return nil
