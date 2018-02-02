@@ -1789,6 +1789,7 @@ func (listener *CarbonserverListener) Listen(listen string) error {
 	carbonserverMux.HandleFunc("/metrics/find/", wrapHandler(listener.findHandler, statusCodes["find"]))
 	carbonserverMux.HandleFunc("/metrics/list/", wrapHandler(listener.listHandler, statusCodes["list"]))
 	carbonserverMux.HandleFunc("/metrics/details/", wrapHandler(listener.detailsHandler, statusCodes["details"]))
+	carbonserverMux.HandleFunc("/tags/", wrapHandler(listener.tagsHandler, statusCodes["find"]))
 	carbonserverMux.HandleFunc("/render/", wrapHandler(listener.renderHandler, statusCodes["render"]))
 	carbonserverMux.HandleFunc("/info/", wrapHandler(listener.infoHandler, statusCodes["info"]))
 
@@ -1938,4 +1939,113 @@ func extractTrigrams(query string) []trigram.T {
 	}
 
 	return trigrams
+}
+
+func (listener *CarbonserverListener) tagsHandler(wr http.ResponseWriter, req *http.Request) {
+	// URL: /tags/?local=1&format=pickle&query=the.metric.path.with.glob
+
+	t0 := time.Now()
+	ctx := req.Context()
+
+	atomic.AddUint64(&listener.metrics.FindRequests, 1)
+
+	req.ParseForm()
+	format := req.FormValue("format")
+	query := req.FormValue("query")
+
+	var response *findResponse
+
+	logger := TraceContextToZap(ctx, listener.logger.With(
+		zap.String("handler", "find"),
+		zap.String("url", req.URL.RequestURI()),
+		zap.String("peer", req.RemoteAddr),
+		zap.String("query", query),
+		zap.String("format", format),
+	))
+
+	accessLogger := TraceContextToZap(ctx, listener.accessLogger.With(
+		zap.String("handler", "find"),
+		zap.String("url", req.URL.RequestURI()),
+		zap.String("peer", req.RemoteAddr),
+		zap.String("query", query),
+		zap.String("format", format),
+	))
+
+	if format != "json" && format != "pickle" && format != "protobuf" && format != "protobuf3" {
+		atomic.AddUint64(&listener.metrics.FindErrors, 1)
+		accessLogger.Error("find failed",
+			zap.Duration("runtime_seconds", time.Since(t0)),
+			zap.String("reason", "unsupported format"),
+			zap.Int("http_code", http.StatusBadRequest),
+		)
+		http.Error(wr, "Bad request (unsupported format)",
+			http.StatusBadRequest)
+		return
+	}
+
+	if query == "" {
+		atomic.AddUint64(&listener.metrics.FindErrors, 1)
+		accessLogger.Error("find failed",
+			zap.Duration("runtime_seconds", time.Since(t0)),
+			zap.String("reason", "empty query"),
+			zap.Int("http_code", http.StatusBadRequest),
+		)
+		http.Error(wr, "Bad request (no query)", http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	fromCache := false
+	if listener.findCacheEnabled {
+		key := query + "&" + format
+		size := uint64(100 * 1024 * 1024)
+		item := listener.findCache.getQueryItem(key, size, 300)
+		res, ok := item.FetchOrLock()
+		if !ok {
+			logger.Debug("find cache miss")
+			atomic.AddUint64(&listener.metrics.FindCacheMiss, 1)
+			response, err = listener.findMetrics(logger, t0, format, query)
+			if err != nil {
+				item.StoreAbort()
+			} else {
+				item.StoreAndUnlock(response)
+			}
+		} else if res != nil {
+			logger.Debug("query cache hit")
+			atomic.AddUint64(&listener.metrics.FindCacheHit, 1)
+			response = res.(*findResponse)
+			fromCache = true
+		}
+	} else {
+		response, err = listener.findMetrics(logger, t0, format, query)
+	}
+
+	if response == nil {
+		accessLogger.Error("find failed",
+			zap.Duration("runtime_seconds", time.Since(t0)),
+			zap.String("reason", "internal error while processing request"),
+			zap.Error(err),
+			zap.Int("http_code", http.StatusInternalServerError),
+		)
+		http.Error(wr, fmt.Sprintf("Internal error while processing request (%v)", err),
+			http.StatusInternalServerError)
+		return
+	}
+
+	wr.Header().Set("Content-Type", response.contentType)
+	wr.Write(response.data)
+
+	if response.files == 0 {
+		// to get an idea how often we search for nothing
+		atomic.AddUint64(&listener.metrics.FindZero, 1)
+	}
+
+	accessLogger.Info("find success",
+		zap.Duration("runtime_seconds", time.Since(t0)),
+		zap.Int("files", response.files),
+		zap.Bool("find_cache_enabled", listener.findCacheEnabled),
+		zap.Bool("from_cache", fromCache),
+		zap.Int("http_code", http.StatusOK),
+	)
+	return
 }
