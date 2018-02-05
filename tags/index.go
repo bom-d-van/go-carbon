@@ -91,7 +91,6 @@ func (t *TagIndex) StatTag(name string, valFilter string) *TagStat {
 	}
 	var ts TagStat
 	ti := tix.(*TagInode)
-	// ti.vals.Ascend(func(item btree.Item) bool {})
 	ti.vals.Ascend(func(item btree.Item) bool {
 		tv := item.(*TagValueInode)
 		if !strings.HasPrefix(tv.val, valFilter) {
@@ -102,12 +101,62 @@ func (t *TagIndex) StatTag(name string, valFilter string) *TagStat {
 	return &ts
 }
 
-type TagValue struct{ Tag, Value string }
+type TagValueExpr struct {
+	Tag, Value string
+	Op         Op
+}
+
+type Op string
+
+const (
+	OpEq       Op = "="
+	OpNotEq    Op = "!="
+	OpMatch    Op = "=~"
+	OpNotMatch Op = "!=~"
+)
 
 func (t *TagIndex) ListMetrics(tvs []TagValue) []string {
+	var metrics []string
 
+	var tvis []*TagValueInode
+	// TODO: fill tvis
+
+	if len(tvs) == 1 {
+		// TODO
+		return metrics
+	}
+
+	//
 }
 
-func (t *TagValueInode) name() {
+func (t *TagIndex) findTagValue(tve TagValueExpr) []*TagValueInode {
+	tix := t.Get(&TagInode{name: tvs[0].Tag})
+	if tix == nil {
+		// TODO: ?
+	}
+	ti := tix.(*TagInode)
+	var tvi []*TagValueInode
+	ti.vals.Ascend(func(item btree.Item) bool {
+		tv := item.(*TagValueInode)
+		switch tve.Op {
+		case OpEq:
+			if tv.val == tve.Value {
+				tvi = append(tvi, tv)
+				return false
+			}
+		case OpNotEq:
+			// TODO
+		case OpMatch:
+			// TODO
+		case OpNotMatch:
+			// TODO
+		}
+		return true
+	})
 
+	return tvi
 }
+
+// func (t *TagValueInode) name() {
+
+// }
