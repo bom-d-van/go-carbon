@@ -228,6 +228,7 @@ type CarbonserverListener struct {
 	accessLogger      *zap.Logger
 	internalStatsDir  string
 	flock             bool
+	compressed        bool
 
 	queryCacheEnabled bool
 	queryCacheSizeMB  int
@@ -428,9 +429,9 @@ func (listener *CarbonserverListener) updateFileList(dir string) {
 				metricsKnown++
 				trimmedName = strings.Replace(trimmedName[1:len(trimmedName)-4], "/", ".", -1)
 				details[trimmedName] = &protov3.MetricDetails{
-					Size_:   i.Size,
-					ModTime: i.MTime,
-					ATime:   i.ATime,
+					Size_:    i.Size,
+					ModTime:  i.MTime,
+					ATime:    i.ATime,
 					RealSize: i.RealSize,
 				}
 			}
