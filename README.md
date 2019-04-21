@@ -108,6 +108,8 @@ enabled = true
 # Use hashed filenames for tagged metrics instead of human readable
 # https://github.com/lomik/go-carbon/pull/225
 hash-filenames = true
+# specify to enable/disable compressed format
+compressed = false
 
 [cache]
 # Limit of in-memory stored points (not metrics)
@@ -418,6 +420,7 @@ With settings above applied, best write-strategy to use is "noop"
 ##### master
 * No longer trying to combine separate UDP messages from one sender into single stream
 * Accept UDP messages in plain protocol without trailing newline
+* Upgrade go-whisper library to have compressed format support
 
 ##### version 0.13.0
 * Added `whisper.max-creates-per-second` option
@@ -534,7 +537,7 @@ Other changes:
 
 ##### version 0.7
 * Grace stop on `USR2` signal: close all socket listeners, flush cache to disk and stop carbon
-* Reload persister config (`whisper` section of main config, `storage-schemas.conf` and `storage-aggregation.conf`) on `HUP` signal 
+* Reload persister config (`whisper` section of main config, `storage-schemas.conf` and `storage-aggregation.conf`) on `HUP` signal
 * Fix bug: Cache may start save points only after first checkpoint
 * Decimal numbers in log files instead of hexademical #22
 * Fix bug: NaN values being saved in Whisper datafiles #17 (thanks [Andrew Hayworth](https://github.com/ahayworth))
@@ -542,7 +545,7 @@ Other changes:
 * Improved throttling (max-updates-per-second) performance #32
 
 ##### version 0.6
-* `metric-interval` option 
+* `metric-interval` option
 
 ##### version 0.5.5
 * Cache module optimization
