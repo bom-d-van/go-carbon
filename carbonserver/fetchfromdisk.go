@@ -28,6 +28,13 @@ type metricFromDisk struct {
 func (listener *CarbonserverListener) fetchFromDisk(metric string, fromTime, untilTime int32) (*metricFromDisk, error) {
 	var step int32
 
+	var aggregationSpec string
+	if strings.Contains(metric, "@") {
+		a := strings.Split(metric, "@")
+		metric = a[0]
+		aggregationSpec = a[1]
+	}
+
 	// We need to obtain the metadata from whisper file anyway.
 	path := listener.whisperData + "/" + strings.Replace(metric, ".", "/", -1) + ".wsp"
 	w, err := whisper.OpenWithOptions(path, &whisper.Options{
@@ -93,7 +100,12 @@ func (listener *CarbonserverListener) fetchFromDisk(metric string, fromTime, unt
 	listener.prometheus.diskRequest()
 
 	res.DiskStartTime = time.Now()
-	points, err := w.Fetch(int(fromTime), int(untilTime))
+	var points *whisper.TimeSeries
+	if aggregationSpec == "" {
+		points, err = w.Fetch(int(fromTime), int(untilTime))
+	} else {
+		points, err = w.FetchByAggregation(int(fromTime), int(untilTime), &whisper.MixAggregationSpec{Method: whisper.Percentile, Percentile: 95})
+	}
 	w.Close()
 	if err != nil {
 		logger.Warn("failed to fetch points", zap.Error(err))
