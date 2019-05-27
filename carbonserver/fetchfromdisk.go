@@ -2,6 +2,7 @@ package carbonserver
 
 import (
 	"errors"
+	"fmt"
 	_ "net/http/pprof"
 	"strings"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/go-graphite/go-whisper"
+	"github.com/lomik/go-carbon/helper"
 	"github.com/lomik/go-carbon/points"
 )
 
@@ -104,12 +106,16 @@ func (listener *CarbonserverListener) fetchFromDisk(metric string, fromTime, unt
 	if aggregationSpec == "" {
 		points, err = w.Fetch(int(fromTime), int(untilTime))
 	} else {
-		points, err = w.FetchByAggregation(int(fromTime), int(untilTime), &whisper.MixAggregationSpec{Method: whisper.Percentile, Percentile: 95})
+		var spec whisper.MixAggregationSpec
+		spec.Method, spec.Percentile, err = helper.ParseAggregationMethod(aggregationSpec)
+		if err == nil {
+			points, err = w.FetchByAggregation(int(fromTime), int(untilTime), &spec)
+		}
 	}
 	w.Close()
 	if err != nil {
 		logger.Warn("failed to fetch points", zap.Error(err))
-		return nil, errors.New("failed to fetch points")
+		return nil, fmt.Errorf("failed to fetch points: %s", err)
 	}
 
 	// Should never happen, because we have a check for proper archive now
