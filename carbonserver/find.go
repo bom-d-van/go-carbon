@@ -207,7 +207,6 @@ func (listener *CarbonserverListener) findMetrics(logger *zap.Logger, t0 time.Ti
 	var err error
 	metricsCount := uint64(0)
 	for _, name := range names {
-
 		glob := globs{
 			Name: name,
 		}
