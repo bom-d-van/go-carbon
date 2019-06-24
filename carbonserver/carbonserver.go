@@ -772,7 +772,10 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 		var files []string
 		var leafs []bool
 		for _, g := range globs {
-			f, l := fidx.trieIdx.search(g, math.MaxInt64)
+			f, l, err := fidx.trieIdx.search(g, math.MaxInt64)
+			if err != nil {
+				panic(err)
+			}
 			files = append(files, f...)
 			leafs = append(leafs, l...)
 		}
