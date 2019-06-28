@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"net/http"
@@ -717,12 +716,12 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 	query = strings.Replace(query, ".", "/", -1)
 
 	var globs []string
-	// if !strings.HasSuffix(query, "*") {
-	// 	globs = append(globs, query+".wsp")
-	// 	logger.Debug("appending file to globs struct",
-	// 		zap.Strings("globs", globs),
-	// 	)
-	// }
+	if !strings.HasSuffix(query, "*") {
+		globs = append(globs, query+".wsp")
+		logger.Debug("appending file to globs struct",
+			zap.Strings("globs", globs),
+		)
+	}
 	globs = append(globs, query)
 	// TODO(dgryski): move this loop into its own function + add tests
 	for {
@@ -773,7 +772,6 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 		var files []string
 		var leafs []bool
 		for _, g := range globs {
-			log.Printf("g = %+v\n", g)
 			f, l, err := fidx.trieIdx.search(g, math.MaxInt64)
 			if err != nil {
 				panic(err)
