@@ -695,6 +695,10 @@ func (listener *CarbonserverListener) updateFileList(dir string) {
 }
 
 func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []bool, error) {
+	if listener.trieIndex {
+		return listener.expandGlobsTrie(query)
+	}
+
 	var useGlob bool
 	logger := zapwriter.Logger("carbonserver")
 
@@ -767,21 +771,6 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 	}
 
 	fidx := listener.CurrentFileIndex()
-
-	if fidx != nil && listener.trieIndex {
-		var files []string
-		var leafs []bool
-		for _, g := range globs {
-			f, l, err := fidx.trieIdx.search(g, math.MaxInt64)
-			if err != nil {
-				panic(err)
-			}
-			files = append(files, f...)
-			leafs = append(leafs, l...)
-		}
-		return files, leafs, nil
-	}
-
 	var files []string
 	fallbackToFS := false
 	if listener.trigramIndex == false || (fidx != nil && len(fidx.files) == 0) {
