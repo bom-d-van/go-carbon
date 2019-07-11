@@ -730,46 +730,9 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 	}
 	globs = append(globs, query)
 	// TODO(dgryski): move this loop into its own function + add tests
-	for {
-		bracematch := false
-		var newglobs []string
-		for _, glob := range globs {
-			lbrace := strings.Index(glob, "{")
-			rbrace := -1
-			if lbrace > -1 {
-				rbrace = strings.Index(glob[lbrace:], "}")
-				if rbrace > -1 {
-					rbrace += lbrace
-				}
-			}
-
-			if lbrace > -1 && rbrace > -1 {
-				bracematch = true
-				expansion := glob[lbrace+1 : rbrace]
-				parts := strings.Split(expansion, ",")
-				for _, sub := range parts {
-					if len(newglobs) > listener.maxGlobs {
-						if listener.failOnMaxGlobs {
-							return nil, nil, errMaxGlobsExhausted
-						}
-						break
-					}
-					newglobs = append(newglobs, glob[:lbrace]+sub+glob[rbrace+1:])
-				}
-			} else {
-				if len(newglobs) > listener.maxGlobs {
-					if listener.failOnMaxGlobs {
-						return nil, nil, errMaxGlobsExhausted
-					}
-					break
-				}
-				newglobs = append(newglobs, glob)
-			}
-		}
-		globs = newglobs
-		if !bracematch {
-			break
-		}
+	globs, err := listener.expandGlobBraces(globs)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	fidx := listener.CurrentFileIndex()
@@ -839,6 +802,51 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 	}
 
 	return files, leafs, nil
+}
+
+func (listener *CarbonserverListener) expandGlobBraces(globs []string) ([]string, error) {
+	for {
+		bracematch := false
+		var newglobs []string
+		for _, glob := range globs {
+			lbrace := strings.Index(glob, "{")
+			rbrace := -1
+			if lbrace > -1 {
+				rbrace = strings.Index(glob[lbrace:], "}")
+				if rbrace > -1 {
+					rbrace += lbrace
+				}
+			}
+
+			if lbrace > -1 && rbrace > -1 {
+				bracematch = true
+				expansion := glob[lbrace+1 : rbrace]
+				parts := strings.Split(expansion, ",")
+				for _, sub := range parts {
+					if len(newglobs) > listener.maxGlobs {
+						if listener.failOnMaxGlobs {
+							return nil, errMaxGlobsExhausted
+						}
+						break
+					}
+					newglobs = append(newglobs, glob[:lbrace]+sub+glob[rbrace+1:])
+				}
+			} else {
+				if len(newglobs) > listener.maxGlobs {
+					if listener.failOnMaxGlobs {
+						return nil, errMaxGlobsExhausted
+					}
+					break
+				}
+				newglobs = append(newglobs, glob)
+			}
+		}
+		globs = newglobs
+		if !bracematch {
+			break
+		}
+	}
+	return globs, nil
 }
 
 func (listener *CarbonserverListener) Stat(send helper.StatCallback) {
