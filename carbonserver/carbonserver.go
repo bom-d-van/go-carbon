@@ -696,7 +696,9 @@ func (listener *CarbonserverListener) updateFileList(dir string) {
 
 func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []bool, error) {
 	logger := zapwriter.Logger("carbonserver")
-	defer func(start time.Time) { logger.Info("expandGlobs", zap.Duration("time", time.Now().Sub(start))) }(time.Now())
+	defer func(start time.Time) {
+		logger.Info("expandGlobs", zap.Duration("time", time.Now().Sub(start)), zap.String("query", query))
+	}(time.Now())
 
 	if listener.trieIndex {
 		return listener.expandGlobsTrie(query)
