@@ -232,6 +232,7 @@ type CarbonserverListener struct {
 	buckets           int
 	maxGlobs          int
 	failOnMaxGlobs    bool
+	maxFilesGlobbed   int
 	percentiles       []int
 	scanFrequency     time.Duration
 	forceScanChan     chan struct{}
@@ -452,6 +453,9 @@ func (listener *CarbonserverListener) SetMaxGlobs(maxGlobs int) {
 }
 func (listener *CarbonserverListener) SetFailOnMaxGlobs(failOnMaxGlobs bool) {
 	listener.failOnMaxGlobs = failOnMaxGlobs
+}
+func (listener *CarbonserverListener) SetMaxFilesGlobbed(max int) {
+	listener.maxFilesGlobbed = max
 }
 func (listener *CarbonserverListener) SetFLock(flock bool) {
 	listener.flock = flock
@@ -696,8 +700,9 @@ func (listener *CarbonserverListener) updateFileList(dir string) {
 
 func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []bool, error) {
 	logger := zapwriter.Logger("carbonserver")
+	matchedCount := 0
 	defer func(start time.Time) {
-		logger.Info("expandGlobs", zap.Duration("time", time.Now().Sub(start)), zap.String("query", query))
+		logger.Info("expandGlobs", zap.Duration("time", time.Now().Sub(start)), zap.String("query", query), zap.Int("matched_count", matchedCount))
 	}(time.Now())
 
 	if listener.trieIndex {
@@ -803,6 +808,7 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 		files[i] = strings.Replace(p, "/", ".", -1)
 	}
 
+	matchedCount = len(files)
 	return files, leafs, nil
 }
 

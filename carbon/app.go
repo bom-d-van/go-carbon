@@ -417,6 +417,7 @@ func (app *App) Start() (err error) {
 		carbonserver.SetFLock(app.Config.Whisper.FLock)
 		carbonserver.SetCompressed(app.Config.Whisper.Compressed)
 		carbonserver.SetFailOnMaxGlobs(conf.Carbonserver.FailOnMaxGlobs)
+		carbonserver.SetMaxFilesGlobbed(conf.Carbonserver.MaxFilesGlobbed)
 		carbonserver.SetBuckets(conf.Carbonserver.Buckets)
 		carbonserver.SetMetricsAsCounters(conf.Carbonserver.MetricsAsCounters)
 		carbonserver.SetScanFrequency(conf.Carbonserver.ScanFrequency.Value())
