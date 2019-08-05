@@ -250,7 +250,9 @@ type CarbonserverListener struct {
 	findCacheEnabled  bool
 	findCache         queryCache
 	trigramIndex      bool
-	trieIndex         bool
+
+	trieIndex             bool
+	trieIndexWithTrigrams bool
 
 	fileIdx      atomic.Value
 	fileIdxMutex sync.Mutex
@@ -496,6 +498,9 @@ func (listener *CarbonserverListener) SetTrigramIndex(enabled bool) {
 func (listener *CarbonserverListener) SetTrieIndex(enabled bool) {
 	listener.trieIndex = enabled
 }
+func (listener *CarbonserverListener) SetTrieIndexWithTrigrams(enabled bool) {
+	listener.trieIndexWithTrigrams = enabled
+}
 func (listener *CarbonserverListener) SetInternalStatsDir(dbPath string) {
 	listener.internalStatsDir = dbPath
 }
@@ -653,6 +658,9 @@ func (listener *CarbonserverListener) updateFileList(dir string) {
 		nfidx.trieIdx = newTrie(".wsp")
 		for _, file := range files {
 			nfidx.trieIdx.insert(file)
+		}
+		if listener.trieIndexWithTrigrams {
+			nfidx.trieIdx.setTrigrams()
 		}
 	} else {
 		nfidx.files = files
