@@ -339,6 +339,10 @@ func (listener *CarbonserverListener) prepareDataProto(format responseFormat, ta
 				)
 				continue
 			}
+			if len(files) > listener.maxMetricsRendered {
+				files = files[:listener.maxMetricsRendered]
+				leafs = leafs[:listener.maxMetricsRendered]
+			}
 
 			metricsCount := 0
 			for i := range files {

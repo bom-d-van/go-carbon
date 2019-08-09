@@ -232,7 +232,6 @@ type CarbonserverListener struct {
 	buckets           int
 	maxGlobs          int
 	failOnMaxGlobs    bool
-	maxFilesGlobbed   int
 	percentiles       []int
 	scanFrequency     time.Duration
 	forceScanChan     chan struct{}
@@ -243,6 +242,9 @@ type CarbonserverListener struct {
 	internalStatsDir  string
 	flock             bool
 	compressed        bool
+
+	maxMetricsGlobbed  int
+	maxMetricsRendered int
 
 	queryCacheEnabled bool
 	queryCacheSizeMB  int
@@ -456,8 +458,11 @@ func (listener *CarbonserverListener) SetMaxGlobs(maxGlobs int) {
 func (listener *CarbonserverListener) SetFailOnMaxGlobs(failOnMaxGlobs bool) {
 	listener.failOnMaxGlobs = failOnMaxGlobs
 }
-func (listener *CarbonserverListener) SetMaxFilesGlobbed(max int) {
-	listener.maxFilesGlobbed = max
+func (listener *CarbonserverListener) SetMaxMetricsGlobbed(max int) {
+	listener.maxMetricsGlobbed = max
+}
+func (listener *CarbonserverListener) SetMaxMetricsRendered(max int) {
+	listener.maxMetricsRendered = max
 }
 func (listener *CarbonserverListener) SetFLock(flock bool) {
 	listener.flock = flock
