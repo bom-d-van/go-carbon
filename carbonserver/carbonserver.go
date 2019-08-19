@@ -757,7 +757,6 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 		)
 	}
 	globs = append(globs, query)
-	// TODO(dgryski): move this loop into its own function + add tests
 	globs, err := listener.expandGlobBraces(globs)
 	if err != nil {
 		return nil, nil, err
@@ -833,6 +832,7 @@ func (listener *CarbonserverListener) expandGlobs(query string) ([]string, []boo
 	return files, leafs, nil
 }
 
+// TODO(dgryski): add tests
 func (listener *CarbonserverListener) expandGlobBraces(globs []string) ([]string, error) {
 	for {
 		bracematch := false
