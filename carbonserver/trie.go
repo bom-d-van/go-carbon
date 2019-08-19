@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unsafe"
 )
@@ -30,7 +31,7 @@ type gmatcher struct {
 }
 
 type gstate struct {
-	// TODO: make c compact
+	// TODO: make c compact (bitmap?)
 	c    [131]bool
 	next []*gstate
 }
@@ -513,6 +514,9 @@ func (ti *trieIndex) walk(pattern string, limit int) (files []string, isFiles []
 	var ndstate *gdstate
 	var isFile, isDir, hasMoreNodes bool
 
+	var count int
+	// log.Printf("curm = %+v\n", curm)
+
 	for {
 		if nindex[ncindex] >= len(cur.childrens) {
 			// log.Println("pop", len(cur.c)) // walk debug
@@ -527,6 +531,8 @@ func (ti *trieIndex) walk(pattern string, limit int) (files []string, isFiles []
 		trieNodes[ncindex] = cur
 		cur = cur.childrens[nindex[ncindex]]
 		ncindex++
+
+		count++
 
 		// log.Printf("cur.fullPath(., ti.depth) = %+v\n", cur.fullPath('.', trieNodes[:ncindex])) // walk debug
 		// log.Printf("curm.dstate = %+v\n", curm.dstate())                                        // walk debug
@@ -559,6 +565,7 @@ func (ti *trieIndex) walk(pattern string, limit int) (files []string, isFiles []
 			if _, ok := ti.trigrams[cur]; ok {
 				for _, t := range curm.trigrams {
 					// log.Printf("trigram.T(t) = %s\n", trigram.T(t))
+					// log.Printf("ti.trigramsContains(cur, t) = %+v\n", ti.trigramsContains(cur, t))
 					if !ti.trigramsContains(cur, t) {
 						goto parent
 					}
@@ -663,6 +670,8 @@ func (ti *trieIndex) walk(pattern string, limit int) (files []string, isFiles []
 		continue
 	}
 
+	// fmt.Println("count = ", count)
+
 	return files, isFiles, nil
 }
 
@@ -727,19 +736,16 @@ func (ti *trieIndex) allMetrics(sep byte) []string {
 	return files
 }
 
-func (ti *trieIndex) setTrigrams() {
+func (ti *trieIndex) stat() (int, int) {
+	var count int
+	var max int
 	var nindex = make([]int, ti.depth+1)
 	var ncindex int
 	var cur = ti.root
 	var trieNodes = make([]*trieNode, ti.depth+1)
-	var trigrams = make([][]uint32, ti.depth+1)
 
-	// chosen semi-randomly, balanced by space and efficiency comparing to a
-	// pure trie index. This value *doubles* the trie index memory usages
-	// and delivers similar performance comparing to trigram index in
-	// queries contains a leading star fowllowing by keywords in one of its
-	// nodes.
-	const factor = 11
+	// var strs = make(map[[]byte]int)
+	var firsts int
 
 	for {
 		if nindex[ncindex] >= len(cur.childrens) {
@@ -749,6 +755,172 @@ func (ti *trieIndex) setTrigrams() {
 		trieNodes[ncindex] = cur
 		cur = cur.childrens[nindex[ncindex]]
 		ncindex++
+
+		if cur.dir() {
+			firsts += len(cur.childrens)
+		}
+
+		// strs[cur.c]++
+
+		count++
+
+		if cur == fileNode {
+			if max < ncindex {
+				max = ncindex
+			}
+
+			// for _, n := range trieNodes {
+			// 	if n != nil {
+			// 		fmt.Printf("%s -> ", string(n.c))
+			// 	}
+			// }
+			// fmt.Println(" end")
+
+			goto parent
+		}
+
+		continue
+
+	parent:
+		nindex[ncindex] = 0
+		ncindex--
+		if ncindex < 0 {
+			break
+		}
+		nindex[ncindex]++
+		cur = trieNodes[ncindex]
+		continue
+	}
+
+	// var counts = make([]int, 0, len(strs))
+	// var rstrs = make(map[int][]string)
+	// for s, c := range items {
+	// 	rstrs[c] = append(rstrs[c], s)
+	// 	counts = append(counts, c)
+	// }
+	// sort.Sort(sort.Reverse(sort.IntSlice(counts)))
+
+	// for i := 0; i < 100; i++ {
+	// 	fmt.Printf("%d -> %s", counts[i], rstrs[counts[i]])
+	// }
+
+	fmt.Println("firsts: ", firsts)
+
+	return count, max
+}
+
+func (ti *trieIndex) statNodes() (map[*trieNode]int, map[*trieNode]bool) {
+	var stat = map[*trieNode]int{}
+	var lastDirs = map[*trieNode]bool{}
+	// var counter int
+	var nindex = make([]int, ti.depth+1)
+	var ncindex int
+	var cur = ti.root
+	var trieNodes = make([]*trieNode, ti.depth+1)
+	var curdir *trieNode
+
+	for {
+		if nindex[ncindex] >= len(cur.childrens) {
+			if cur.dir() {
+				stat[cur] = len(cur.childrens)
+				// counter = 0
+			}
+
+			goto parent
+		}
+
+		if cur.dir() {
+			curdir = cur
+		}
+
+		trieNodes[ncindex] = cur
+		cur = cur.childrens[nindex[ncindex]]
+		ncindex++
+
+		if cur == fileNode {
+			if curdir != nil {
+				lastDirs[curdir] = true
+			}
+			goto parent
+		}
+
+		continue
+
+	parent:
+		nindex[ncindex] = 0
+		ncindex--
+		if ncindex < 0 {
+			break
+		}
+		nindex[ncindex]++
+		cur = trieNodes[ncindex]
+		continue
+	}
+
+	{
+		var counts = make([]int, 0, len(stat))
+		for _, c := range stat {
+			counts = append(counts, c)
+		}
+		sort.Sort(sort.Reverse(sort.IntSlice(counts)))
+
+		for i := 0; i < 300; i++ {
+			fmt.Printf("%d: %d ", i, counts[i])
+		}
+		fmt.Println("")
+	}
+
+	return stat, lastDirs
+}
+
+func (ti *trieIndex) setTrigrams() {
+	var nindex = make([]int, ti.depth+1)
+	var dirindex = make([]int, ti.depth+1)
+	var ncindex int
+	var cur = ti.root
+	var trieNodes = make([]*trieNode, ti.depth+1)
+	var trigrams = make([][]uint32, ti.depth+1)
+	var _, lastDirs = ti.statNodes()
+	var curdir *trieNode
+
+	// chosen semi-randomly, balanced by space and efficiency comparing to a
+	// pure trie index. This value *doubles* the trie index memory usages
+	// and delivers similar performance comparing to trigram index in
+	// queries contains a leading star fowllowing by keywords in one of its
+	// nodes.
+	const factor = 30
+
+	dirindex[0] = 1
+	addt := func(index int, n *trieNode, b1, b2, b3 byte) {
+		t := uint32(uint32(b1)<<16 | uint32(b2)<<8 | uint32(b3))
+		if index-dirindex[index] == 0 && !lastDirs[curdir] {
+			// && stats[trieNodes[ncindex-1]] > factor
+			ti.trigrams[n] = append(ti.trigrams[n], t)
+		}
+		// if (index-dirindex[index])%factor == 0 {
+		// ti.trigrams[n] = append(ti.trigrams[n], t)
+		// }
+		trigrams[ncindex] = append(trigrams[ncindex], t)
+	}
+
+	for {
+		if nindex[ncindex] >= len(cur.childrens) {
+			goto parent
+		}
+
+		trieNodes[ncindex] = cur
+		cur = cur.childrens[nindex[ncindex]]
+		ncindex++
+
+		if cur.dir() {
+			curdir = cur
+		}
+
+		if trieNodes[ncindex-1].dir() {
+			dirindex[ncindex] = ncindex
+		} else {
+			dirindex[ncindex] = dirindex[ncindex-1]
+		}
 
 		// log.Printf("cur.fullPath(., ti.depth) = %+v\n", cur.fullPath('.', trieNodes[:ncindex])) // walk debug
 		// for _, child := range cur.childrens {                                                   // walk debug
@@ -761,42 +933,27 @@ func (ti *trieIndex) setTrigrams() {
 			cur1 := trieNodes[ncindex-1]
 			if !cur1.dir() {
 				if len(cur1.c) > 1 {
-					t := uint32(uint32(cur1.c[len(cur1.c)-2])<<16 | uint32(cur1.c[len(cur1.c)-1])<<8 | uint32(cur.c[0]))
-					if (ncindex-1)%factor == 0 {
-						ti.trigrams[cur1] = append(ti.trigrams[cur1], t)
-					}
-					trigrams[ncindex] = append(trigrams[ncindex], t)
+					addt(ncindex-1, cur1, cur1.c[len(cur1.c)-2], cur1.c[len(cur1.c)-1], cur.c[0])
 				} else if ncindex-2 >= 0 {
-					cur2 := trieNodes[ncindex-2]
-					if !cur2.dir() && len(cur2.c) > 0 && len(cur1.c) > 0 {
-						t := uint32(uint32(cur2.c[len(cur2.c)-1])<<16 | uint32(cur1.c[len(cur1.c)-1])<<8 | uint32(cur.c[0]))
-						if (ncindex-2)%factor == 0 {
-							ti.trigrams[cur2] = append(ti.trigrams[cur2], t)
-						}
-						trigrams[ncindex] = append(trigrams[ncindex], t)
+					if cur2 := trieNodes[ncindex-2]; !cur2.dir() && len(cur2.c) > 0 && len(cur1.c) > 0 {
+						addt(ncindex-2, cur2, cur2.c[len(cur2.c)-1], cur1.c[len(cur1.c)-1], cur.c[0])
 					}
 				}
 
 				if len(cur.c) > 1 {
-					t := uint32(cur1.c[len(cur1.c)-1])<<16 | uint32(cur.c[0])<<8 | uint32(cur.c[1])
-					if (ncindex-1)%factor == 0 {
-						ti.trigrams[cur1] = append(ti.trigrams[cur1], t)
-					}
-					trigrams[ncindex] = append(trigrams[ncindex], t)
+					addt(ncindex-1, cur1, cur1.c[len(cur1.c)-1], cur.c[0], cur.c[1])
 				}
 			}
 		}
 		if !cur.dir() && len(cur.c) > 2 {
 			for i := 0; i < len(cur.c)-2; i++ {
-				t := uint32(uint32(cur.c[i])<<16 | uint32(cur.c[i+1])<<8 | uint32(cur.c[i+2]))
-				if ncindex%factor == 0 {
-					ti.trigrams[cur] = append(ti.trigrams[cur], t)
-				}
-				trigrams[ncindex] = append(trigrams[ncindex], t)
+				addt(ncindex, cur, cur.c[i], cur.c[i+1], cur.c[i+2])
 			}
 		}
 		for i := 0; i < ncindex+1; i++ {
-			if ncindex%factor == 0 {
+			// if (ncindex-dirindex[ncindex])%factor == 0 {
+			if ncindex-dirindex[ncindex] == 0 && !lastDirs[curdir] {
+				// stats[trieNodes[ncindex-1]] > factor
 				ti.trigrams[cur] = append(ti.trigrams[cur], trigrams[i]...)
 			}
 		}
@@ -806,7 +963,9 @@ func (ti *trieIndex) setTrigrams() {
 				break
 			}
 			for _, t := range trigrams[ncindex] {
-				if i%factor == 0 {
+				// if (i-dirindex[i])%factor == 0 {
+				if i-dirindex[i] == 0 && i > 0 && !lastDirs[curdir] {
+					// stats[trieNodes[i-1]] > factor
 					ti.trigrams[trieNodes[i]] = append(ti.trigrams[trieNodes[i]], t)
 				}
 			}

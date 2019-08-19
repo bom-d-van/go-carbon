@@ -1,10 +1,13 @@
 package carbonserver
 
 import (
+	randc "crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"math"
 	"math/rand"
+	randm "math/rand"
 	"reflect"
 	"regexp"
 	"sort"
@@ -13,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OneOfOne/go-utils/memory"
 	"github.com/dgryski/go-trigram"
 	"go.uber.org/zap"
 )
@@ -36,11 +40,13 @@ func newTrieServer(files []string, withTrigram bool) *CarbonserverListener {
 		trieIndex.insert(file)
 	}
 	fmt.Printf("trie index took %s\n", time.Now().Sub(start))
+	count, max := trieIndex.stat()
+	fmt.Printf("trie total nodes: %d max_depth: %d\n", count, max)
 
 	if withTrigram {
 		start = time.Now()
 		trieIndex.setTrigrams()
-		fmt.Printf("trie setTrigrams took %s\n", time.Now().Sub(start))
+		fmt.Printf("trie setTrigrams took %s size %d\n", time.Now().Sub(start), len(trieIndex.trigrams))
 	}
 
 	listener.UpdateFileIndex(&fileIndex{
@@ -517,7 +523,7 @@ func TestTrieIndex(t *testing.T) {
 	}
 }
 
-func BenchmarkGlobIndex(b *testing.B) {
+func BenchmarkGlobIndexGeneral(b *testing.B) {
 	var btrieServer *CarbonserverListener
 	var btrigramServer *CarbonserverListener
 
@@ -591,6 +597,147 @@ func BenchmarkGlobIndex(b *testing.B) {
 			}
 		})
 		b.Logf("trie.len = %d trigram.len = %d", ctrie, ctrigram)
+	}
+}
+
+func BenchmarkGlobIndexKeyword(b *testing.B) {
+	var btrieServer, btrieTrigramServer *CarbonserverListener
+	var btrigramServer *CarbonserverListener
+	_ = btrieTrigramServer
+	_ = btrigramServer
+
+	// 10/100/50000
+	limit0 := 100 // 50
+	limit1 := 500 // 50
+	limit2 := 3   // 100
+	limit3 := 3   // 1
+	files := make([]string, 0, limit0*limit1*limit2*limit3)
+	keyword := "keyword"
+	// prefixLen := 0
+
+	randm.Seed(time.Now().Unix())
+	getc := func(c int) string {
+		b := make([]byte, c)
+		_, err := randc.Read(b)
+		if err != nil {
+			panic(err)
+		}
+		r := base64.StdEncoding.EncodeToString(b)
+		for _, c := range []string{"=", "/", "+"} {
+			r = strings.ReplaceAll(r, c, "")
+		}
+		return r
+	}
+
+	// var parts0 = make([]string, limit0)
+	// for i := 0; i < limit0; i++ {
+	// 	parts0[i] = fmt.Sprintf("%s", getc(7))
+	// }
+	// var parts1 = make([]string, limit1)
+	// for i := 0; i < limit1; i++ {
+	// 	parts1[i] = fmt.Sprintf("%s", getc(7))
+	// }
+	// var parts2 = make([]string, limit2)
+	// for i := 0; i < limit2; i++ {
+	// 	parts2[i] = fmt.Sprintf("%s", getc(7))
+	// }
+	// var parts3 = make([]string, limit3)
+	// for i := 0; i < limit3; i++ {
+	// 	parts3[i] = fmt.Sprintf("%s", getc(7))
+	// }
+
+	for i0 := 0; i0 < limit0; i0++ {
+		for i1 := 0; i1 < limit1; i1++ {
+			for i2 := 0; i2 < limit2; i2++ {
+				for i3 := 0; i3 < limit3; i3++ {
+					files = append(files, "/%s.wsp")
+
+					if randm.Intn(1000) == 1 {
+						files = append(files, "/%s-%s.wsp", keyword, getc(32))
+						// if randm.Intn(1000) == 1 {
+						// 	log.Printf("files[len(files)-1] = %+v\n", files[len(files)-1])
+						// }
+					}
+				}
+			}
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		btrieServer = newTrieServer(files, false)
+		wg.Done()
+	}()
+	go func() {
+		btrieTrigramServer = newTrieServer(files, true)
+		wg.Done()
+	}()
+	go func() {
+		btrigramServer = newTrigramServer(files)
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	fmt.Printf("files: %d\n", len(files))
+	for i, f := range files[:10] {
+		fmt.Printf("  %d: %s\n", i, f)
+	}
+
+	b.Logf("memory.Sizeof(btrieServer)        = %+v\n", memory.Sizeof(btrieServer))
+	b.Logf("memory.Sizeof(btrieTrigramServer) = %+v\n", memory.Sizeof(btrieTrigramServer))
+	b.Logf("memory.Sizeof(btrigramServer)     = %+v\n", memory.Sizeof(btrigramServer))
+
+	var cases = []struct {
+		input string
+	}{
+		// {"service-*.server-*.metric-namespace-[4]0*.*"},
+		// {"service-*.server-*.*.cpu"},
+		// {"service-2[3-4].server-02[1-9].metric-namespace-0[2-3]0.cpu"},
+
+		// // for exact match, trigram index falls back to file system stat, so
+		// // this case isn't very representaive, however, trie+dfa performs
+		// // extremely good in this case
+		// {"service-23.server-029.metric-namespace-030.cpu"},
+
+		// {"service-*.server-*.metric-namespace-40*.*"},
+		// // trigram index performs is better for this case because trie+dfa needs
+		// // to scan every third nodes because of leading star in the query
+		// // "*-40*"
+		// {"service-*.server-*.*-40*.*"},
+		// {"service-*.*server-300*.*-40*.*"},
+		// {"service-*.*server-300*.*-4*.*"},
+
+		{"*" + keyword + "*"},
+	}
+
+	// fmt.Printf("dump\n")
+	// for i, f := range btrieServer.CurrentFileIndex().trieIdx.allMetrics('.') {
+	// 	fmt.Printf("  %d: %s\n", i, f)
+	// }
+
+	for _, c := range cases {
+		var ctrie, ctrieTrigram, ctrigram int
+		b.Run("trie/"+c.input, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				f, _, _ := btrieServer.expandGlobsTrie(c.input)
+				ctrie = len(f)
+			}
+		})
+		b.Run("trie2/"+c.input, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				f, _, _ := btrieTrigramServer.expandGlobsTrie(c.input)
+				ctrieTrigram = len(f)
+			}
+		})
+		b.Run("trigram/"+c.input, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				f, _, _ := btrigramServer.expandGlobs(c.input)
+				ctrigram = len(f)
+			}
+		})
+		b.Logf("trie.len = %d ctrieTrigram.len = %d trigram.len = %d", ctrie, ctrieTrigram, ctrigram)
 	}
 }
 
